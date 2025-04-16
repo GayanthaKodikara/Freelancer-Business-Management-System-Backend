@@ -4,7 +4,7 @@ from config import get_db_connection
 import hashlib, jwt, pymysql, datetime, os
 from dotenv import load_dotenv
 
-app = Blueprint('login',__name__)
+auth = Blueprint('login',__name__)
 load_dotenv()
 
 
@@ -25,7 +25,7 @@ def generate_jwt(user_id, email):
     return token
 
 
-@app.route('/login', methods=['POST'])
+@auth.route('/login', methods=['POST'])
 def login():
     connection = get_db_connection()
     if connection is None:
@@ -66,7 +66,7 @@ def login():
         cursor.close()
         connection.close()
 
-@app.route('/register', methods=['POST'])
+@auth.route('/register', methods=['POST'])
 def register():
     connection = get_db_connection()
     if connection is None:

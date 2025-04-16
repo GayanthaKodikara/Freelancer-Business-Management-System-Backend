@@ -1,16 +1,18 @@
 from flask import Flask
 from flask_cors import CORS
-from employee_management import appp
-from login import app
+from employee_management import emp
+from login import auth
+from project_management import prj
 
 
-fbms = Flask(__name__)
-CORS(fbms) # use for cross origin resource sharing
+app = Flask(__name__)
+CORS(app) # use for cross origin resource sharing
 
 
-fbms.register_blueprint(app)
-fbms.register_blueprint(appp)
+app.register_blueprint(auth)
+app.register_blueprint(emp)
+app.register_blueprint(prj)
 
 
 if __name__ == '__main__':
-    fbms.run(debug=True)
+    app.run(debug=True)
