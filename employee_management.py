@@ -1,8 +1,12 @@
 from flask import Blueprint, jsonify, request
 from config import get_db_connection
 import hashlib
+import logging
 
-emp = Blueprint('get_employees, add_employee' ,__name__)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+emp = Blueprint('employee', __name__)
 
 
 def hashed_password(nic):
@@ -11,12 +15,15 @@ def hashed_password(nic):
 
 @emp.route('/employees', methods=['GET'])
 def get_employees():
+    logging.info("GET request received for /employees")
+    connection = None
+    cursor = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
         cursor.execute("SELECT * FROM employee")
         results = cursor.fetchall()
-        
+        logging.info(f"Retrieved {len(results)} employees from the database")
 
         users = []
         for row in results:
@@ -32,23 +39,30 @@ def get_employees():
                 'workshop_name': row[7],
                 'design_category': row[8],
             })
+        logging.info("Successfully processed employee data for response")
         return jsonify(users)
 
     except Exception as e:
-        connection.rollback()
+        if connection:
+            connection.rollback()
+        logging.error(f"Error processing GET request for /employees: {e}")
         return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        connection.close()
 
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+        logging.info("Database connection closed after GET /employees")
 
 
 @emp.route('/employees', methods=['POST'])
 def add_employee():
-    connection = get_db_connection()
-    cursor = connection.cursor()
+    logging.info("POST request received for /employees")
+    connection = None
+    cursor = None
     data = request.get_json()
+    logging.info(f"Received JSON data: {data}")
     first_name = data.get('first_name')
     last_name = data.get('last_name')
     email = data.get('email')
@@ -60,33 +74,45 @@ def add_employee():
     design_category = data.get('design_category')
     hashed_nic = hashed_password(nic)
     permission = data.get('permission')
-
+    logging.info(f"Hashed NIC for {nic}")
 
     if not first_name or not email or not nic:
+        logging.warning("Required fields (first_name, email, nic) are missing in POST request")
         return jsonify({'error': 'Name, email and NIC are required'}), 400
-        
+
     try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
         cursor.execute("INSERT INTO employee (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-         (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category))
+                       (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category))
         connection.commit()
-         
-        cursor.execute("INSERT INTO login (email, hashed_password, permission) VALUES (%s, %s, %s)",(email,hashed_nic,permission))  
+        logging.info(f"Employee with email '{email}' added to the employee table")
+
+        cursor.execute("INSERT INTO login (email, hashed_password, permission) VALUES (%s, %s, %s)", (email, hashed_nic, permission))
         connection.commit()
+        logging.info(f"Login details added for employee with email '{email}'")
 
         return jsonify({'message': 'Employee added successfully'}), 201
-    
+
     except Exception as e:
-        connection.rollback()
+        if connection:
+            connection.rollback()
+        logging.error(f"Error processing POST request for /employees: {e}")
         return jsonify({'error': str(e)}), 500
-    
+
     finally:
-        cursor.close()
-        connection.close()
-     
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+        logging.info("Database connection closed after POST /employees")
 
 
 @emp.route('/employees/<int:emp_id>', methods=['GET'])
 def get_employee(emp_id):
+    logging.info(f"GET request received for /employees/{emp_id}")
+    connection = None
+    cursor = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -99,21 +125,31 @@ def get_employee(emp_id):
                 'address': result[3], 'nic': result[4], 'birth_day': str(result[5]), 'role': result[6],
                 'workshop_name': result[7], 'design_category': result[8]
             }
+            logging.info(f"Found employee with emp_id {emp_id}")
             return jsonify(employee), 200
         else:
+            logging.warning(f"Employee with emp_id {emp_id} not found")
             return jsonify({'error': 'Employee not found'}), 404
 
     except Exception as e:
+        logging.error(f"Error processing GET request for /employees/{emp_id}: {e}")
         return jsonify({'error': str(e)}), 500
-    
+
     finally:
-        cursor.close()
-        connection.close()
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+        logging.info(f"Database connection closed after GET /employees/{emp_id}")
 
 
 @emp.route('/employees/<int:emp_id>', methods=['PUT'])
 def update_employee(emp_id):
+    logging.info(f"PUT request received for /employees/{emp_id}")
+    connection = None
+    cursor = None
     data = request.get_json()
+    logging.info(f"Received JSON data: {data}")
     first_name = data.get('first_name')
     last_name = data.get('last_name')
     email = data.get('email')
@@ -126,49 +162,65 @@ def update_employee(emp_id):
     permission = data.get('permission')
 
     if not data:
+        logging.warning(f"No data provided in PUT request for /employees/{emp_id}")
         return jsonify({'error': 'No data provided'}), 400
-
-    connection = get_db_connection()
-    cursor = connection.cursor()
-
-    try:
-        cursor.execute(
-            "UPDATE employee SET first_name = %s, last_name = %s, email = %s, address = %s, nic = %s, birth_day = %s, role = %s, workshop_name = %s, design_category = %s, permission = %s WHERE emp_id = %s",
-            (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category, emp_id, permission)
-        )
-        connection.commit()
-        return jsonify({'message': 'Employee updated successfully'}), 200
-
-    except Exception as e:
-        connection.rollback()
-        return jsonify({'error': str(e)}), 500
-    
-    finally:
-        cursor.close()
-        connection.close()
-
-
-@emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
-def update_permission(emp_id):
-
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-
-    permission = data.get('permission')
 
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
-        cursor.execute("UPDATE login SET permission = %s WHERE emp_id = %s", (permission, emp_id))
+        cursor.execute(
+            "UPDATE employee SET first_name = %s, last_name = %s, email = %s, address = %s, nic = %s, birth_day = %s, role = %s, workshop_name = %s, design_category = %s WHERE emp_id = %s",
+            (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category, emp_id)
+        )
         connection.commit()
+        logging.info(f"Employee with emp_id {emp_id} updated successfully")
+        return jsonify({'message': 'Employee updated successfully'}), 200
+
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        logging.error(f"Error processing PUT request for /employees/{emp_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+        logging.info(f"Database connection closed after PUT /employees/{emp_id}")
+
+
+@emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
+def update_permission(emp_id):
+    logging.info(f"PUT request received for /employees/remove/{emp_id}")
+    connection = None
+    cursor = None
+    data = request.get_json()
+    logging.info(f"Received JSON data: {data}")
+    if not data:
+        logging.warning(f"No data provided in PUT request for /employees/remove/{emp_id}")
+        return jsonify({'error': 'No data provided'}), 400
+
+    permission = data.get('permission')
+    logging.info(f"Attempting to update permission for emp_id {emp_id} to '{permission}'")
+
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("UPDATE login SET permission = %s WHERE email IN (SELECT email FROM employee WHERE emp_id = %s)", (permission, emp_id))
+        connection.commit()
+        logging.info(f"Employee permission for emp_id {emp_id} updated to '{permission}' successfully")
         return jsonify({'message': 'Employee permission Removed successfully'}), 200
 
     except Exception as e:
-         connection.rollback()
-         return jsonify({'error': str(e)}), 500
+        if connection:
+            connection.rollback()
+        logging.error(f"Error processing PUT request for /employees/remove/{emp_id}: {e}")
+        return jsonify({'error': str(e)}), 500
 
     finally:
+        if cursor:
             cursor.close()
+        if connection:
             connection.close()
-    
+        logging.info(f"Database connection closed after PUT /employees/remove/{emp_id}")

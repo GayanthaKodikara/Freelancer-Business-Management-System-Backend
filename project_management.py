@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from config import get_db_connection
 
 
-prj = Blueprint('add_project',__name__)
+prj = Blueprint('projects',__name__)
 
 
 # add project
