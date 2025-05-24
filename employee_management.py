@@ -21,7 +21,10 @@ def get_employees():
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
-        cursor.execute("SELECT * FROM employee")
+        cursor.execute("""
+            SELECT employee.*, login.permission
+            FROM employee INNER JOIN login ON employee.emp_id = login.emp_id
+        """)
         results = cursor.fetchall()
         logging.info(f"Retrieved {len(results)} employees from the database")
 
@@ -38,6 +41,7 @@ def get_employees():
                 'role': row[6],
                 'workshop_name': row[7],
                 'design_category': row[8],
+                'permission': row[10]
             })
         logging.info("Successfully processed employee data for response")
         return jsonify(users)
@@ -49,12 +53,9 @@ def get_employees():
         return jsonify({'error': str(e)}), 500
 
     finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+        cursor.close()
+        connection.close()
         logging.info("Database connection closed after GET /employees")
-
 
 @emp.route('/employees', methods=['POST'])
 def add_employee():
@@ -159,7 +160,12 @@ def update_employee(emp_id):
     role = data.get('role')
     workshop_name = data.get('workshop_name')
     design_category = data.get('design_category')
-    permission = data.get('permission')
+    password = data.get('password')
+
+    hashed_password_value = None
+    if password:
+        hashed_password_value = hashed_password(password)
+        logging.info(f"Hashed password for employee with emp_id {emp_id}")
 
     if not data:
         logging.warning(f"No data provided in PUT request for /employees/{emp_id}")
@@ -168,12 +174,24 @@ def update_employee(emp_id):
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
+
+        # Update employee details
         cursor.execute(
             "UPDATE employee SET first_name = %s, last_name = %s, email = %s, address = %s, nic = %s, birth_day = %s, role = %s, workshop_name = %s, design_category = %s WHERE emp_id = %s",
             (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category, emp_id)
         )
         connection.commit()
-        logging.info(f"Employee with emp_id {emp_id} updated successfully")
+        logging.info(f"Employee with emp_id {emp_id} updated successfully in employee table")
+
+        # Update login details (conditionally update password if provided)
+        if hashed_password_value:
+            cursor.execute("UPDATE login SET email = %s, hashed_password = %s WHERE emp_id = %s", (email, hashed_password_value, emp_id))
+            logging.info(f"Login details updated with new password for employee with email '{email}'")
+        else:
+            cursor.execute("UPDATE login SET email = %s WHERE emp_id = %s", (email, emp_id))
+            logging.info(f"Login email updated for employee with email '{email}'")
+        connection.commit()
+
         return jsonify({'message': 'Employee updated successfully'}), 200
 
     except Exception as e:
@@ -188,7 +206,6 @@ def update_employee(emp_id):
         if connection:
             connection.close()
         logging.info(f"Database connection closed after PUT /employees/{emp_id}")
-
 
 @emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
 def update_permission(emp_id):

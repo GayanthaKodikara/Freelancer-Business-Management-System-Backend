@@ -1,5 +1,4 @@
 from flask import Blueprint, request, jsonify
-from flask_cors import CORS
 from config import get_db_connection
 import hashlib, jwt, pymysql, datetime, os, logging
 from dotenv import load_dotenv
@@ -26,7 +25,7 @@ def generate_jwt(user_id, email):
     logging.info(f"JWT generated for user ID: {user_id} and email: {email}")
     return token
 
-
+# Logging Page
 @auth.route('/login', methods=['POST'])
 def login():
     logging.info("POST request received for /login")
@@ -54,20 +53,23 @@ def login():
         user = cursor.fetchone()
 
         if user:
-            user_data = {
-                "id": user[0],
-                "email": user[1],
-            }
-            token = generate_jwt(user[0], user[1])
-            logging.info(f"Login successful for user with email: {email}")
-            return jsonify({"message": "Login successful", "user": user_data, "token": token}), 200
+            user_permission = user[3]
+
+            if user_permission == "TRUE": 
+                user_data = {
+                    "emp_id": user[0],
+                    "email": user[1],
+                    "permission": user_permission
+                }
+                token = generate_jwt(user[0], user[1])
+                logging.info(f"Login successful for user with email: {email}")
+                return jsonify({"message": "Login successful", "user": user_data, "token": token}), 200
+            else:
+                logging.warning(f"Login denied for user with email: {email} due to insufficient permissions.")
+                return jsonify({"error": "Permission denied. Your account is not active."}), 403 # 403 Forbidden
         else:
             logging.warning(f"Invalid login attempt for email: {email}")
             return jsonify({"error": "Invalid email or password"}), 401
-
-    except pymysql.MySQLError as e:
-        logging.error(f"Database error during login: {e}")
-        return jsonify({"error": f"Database error: {e}"}), 500
 
     except Exception as e:
         logging.error(f"An unexpected error occurred during login: {e}")
@@ -79,7 +81,6 @@ def login():
         if connection:
             connection.close()
         logging.info("Database connection closed after /login request")
-
 
 @auth.route('/register', methods=['POST'])
 def register():
@@ -112,10 +113,6 @@ def register():
     except pymysql.IntegrityError:
         logging.warning(f"Registration failed: Email '{email}' already registered")
         return jsonify({"error": "Email already registered"}), 400
-
-    except pymysql.MySQLError as e:
-        logging.error(f"Database error during registration: {e}")
-        return jsonify({"error": f"Database error: {e}"}), 500
 
     except Exception as e:
         logging.error(f"An unexpected error occurred during registration: {e}")
