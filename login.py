@@ -1,126 +1,165 @@
 from flask import Blueprint, request, jsonify
 from config import get_db_connection
-import hashlib, jwt, pymysql, datetime, os, logging
+import jwt, pymysql, datetime, os, logging, bcrypt
 from dotenv import load_dotenv
 
 auth = Blueprint('login', __name__)
 load_dotenv()
 
-# Configure logging
+# Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 SECRET_KEY = os.getenv('jwt_secret_key')
-
-
-def hash_password(password):
-    return hashlib.sha512(password.encode()).hexdigest()
-
 
 def generate_jwt(user_id, email):
     token = jwt.encode({
         'user_id': user_id,
         'email': email,
-        'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+        'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)
     }, SECRET_KEY, algorithm='HS256')
     logging.info(f"JWT generated for user ID: {user_id} and email: {email}")
     return token
 
-# Logging Page
 @auth.route('/login', methods=['POST'])
 def login():
     logging.info("POST request received for /login")
-    connection = None
-    cursor = None
     data = request.get_json()
-    logging.info(f"Received JSON data for login")
     email = data.get("email")
     password = data.get("password")
-    hashed_password = hash_password(password)
-    logging.info(f"Hashed password for email: {email}")
 
     if not email or not password:
         logging.warning("Email and password are required for login")
         return jsonify({"error": "Email and password are required"}), 400
+        
+    connection = None
+    cursor = None
 
     try:
         connection = get_db_connection()
         if connection is None:
-            logging.error("Database connection failed during login")
+            logging.error("Database connection failed")
             return jsonify({"error": "Database connection failed"}), 500
 
         cursor = connection.cursor()
-        cursor.execute("SELECT * FROM login WHERE email = %s AND hashed_password = %s", (email, hashed_password))
+        cursor.execute("SELECT emp_id, email, hashed_password, permission FROM login WHERE email = %s", (email,))
         user = cursor.fetchone()
 
         if user:
-            user_permission = user[3]
+            emp_id, email, db_hashed_password, permission = user
+            logging.info(f"User  found: {email} with permission: {permission}")
+            if bcrypt.checkpw(password.encode('utf-8'), db_hashed_password.encode('utf-8')):
+                if permission == "TRUE":
+                    token = generate_jwt(emp_id, email)
 
-            if user_permission == "TRUE": 
-                user_data = {
-                    "emp_id": user[0],
-                    "email": user[1],
-                    "permission": user_permission
-                }
-                token = generate_jwt(user[0], user[1])
-                logging.info(f"Login successful for user with email: {email}")
-                return jsonify({"message": "Login successful", "user": user_data, "token": token}), 200
+                    # Store token in DB
+                    cursor.execute("UPDATE login SET jwt_token = %s WHERE emp_id = %s", (token, emp_id))
+                    connection.commit()
+                    logging.info(f"Token stored for user ID: {emp_id}")
+
+                    return jsonify({
+                        "message": "Login successful",
+                        "user": {"emp_id": emp_id, "email": email, "permission": permission},
+                        "token": token
+                    }), 200
+                else:
+                    logging.warning(f"Permission denied for user ID: {emp_id} - Account not active")
+                    return jsonify({"error": "Permission denied. Your account is not active."}), 403
             else:
-                logging.warning(f"Login denied for user with email: {email} due to insufficient permissions.")
-                return jsonify({"error": "Permission denied. Your account is not active."}), 403 # 403 Forbidden
+                logging.warning(f"Invalid password attempt for email: {email}")
+                return jsonify({"error": "Invalid email or password"}), 401
         else:
-            logging.warning(f"Invalid login attempt for email: {email}")
+            logging.warning(f"Invalid login attempt for email: {email} - User not found")
             return jsonify({"error": "Invalid email or password"}), 401
 
     except Exception as e:
-        logging.error(f"An unexpected error occurred during login: {e}")
-        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
+        logging.error(f"Login error: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
     finally:
         if cursor:
             cursor.close()
         if connection:
             connection.close()
-        logging.info("Database connection closed after /login request")
+
 
 @auth.route('/register', methods=['POST'])
 def register():
     logging.info("POST request received for /register")
-    connection = None
-    cursor = None
     data = request.get_json()
-    logging.info(f"Received JSON data for registration: {data}")
     email = data.get("email")
     password = data.get("password")
-    hashed_password = hash_password(password)
-    logging.info(f"Hashed password for registration of email: {email}")
 
     if not email or not password:
         logging.warning("Email and password are required for registration")
         return jsonify({"error": "Email and password are required"}), 400
 
     try:
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        logging.info(f"Password hashed for email: {email}")
+
         connection = get_db_connection()
         if connection is None:
-            logging.error("Database connection failed during registration")
+            logging.error("Database connection failed")
             return jsonify({"error": "Database connection failed"}), 500
 
         cursor = connection.cursor()
         cursor.execute("INSERT INTO login (email, hashed_password) VALUES (%s, %s)", (email, hashed_password))
         connection.commit()
-        logging.info(f"Registration successful for email: {email}")
+        logging.info(f"User  registered successfully: {email}")
+
         return jsonify({"message": "Registration successful"}), 201
 
     except pymysql.IntegrityError:
-        logging.warning(f"Registration failed: Email '{email}' already registered")
+        logging.warning(f"Registration failed - Email already registered: {email}")
         return jsonify({"error": "Email already registered"}), 400
 
     except Exception as e:
-        logging.error(f"An unexpected error occurred during registration: {e}")
-        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
+        logging.error(f"Registration error: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
     finally:
         if cursor:
             cursor.close()
         if connection:
             connection.close()
-        logging.info("Database connection closed after /register request")
+
+
+@auth.route('/verify-token', methods=['GET'])
+def verify_token():
+    token = request.headers.get('Authorization')
+    if not token:
+        logging.warning("Missing token in request headers")
+        return jsonify({'error': 'Missing token'}), 401
+
+    if token.startswith("Bearer "):
+        token = token[7:]
+
+    try:
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        user_id = decoded['user_id']
+        email = decoded['email']
+        logging.info(f"Token decoded for user ID: {user_id} and email: {email}")
+
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT jwt_token FROM login WHERE emp_id = %s AND email = %s", (user_id, email))
+        result = cursor.fetchone()
+
+        if result and result[0] == token:
+            logging.info(f"Token is valid for user ID: {user_id}")
+            return jsonify({'message': 'Token is valid', 'user_id': user_id, 'email': email}), 200
+        else:
+            logging.warning(f"Invalid or expired token for user ID: {user_id}")
+            return jsonify({'error': 'Invalid or expired token'}), 403
+
+    except jwt.ExpiredSignatureError:
+        logging.warning("Token expired")
+        return jsonify({'error': 'Token expired'}), 401
+    except jwt.InvalidTokenError:
+        logging.warning("Invalid token")
+        return jsonify({'error': 'Invalid token'}), 403
+
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()

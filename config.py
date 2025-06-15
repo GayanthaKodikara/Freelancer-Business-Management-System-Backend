@@ -26,7 +26,7 @@ def get_db_connection():
         logging.error(f"Error connecting to MySQL: {e}")
         return None
 
-# Example of how to use the connection (optional)
+
 if __name__ == '__main__':
     connection = get_db_connection()
     if connection:
