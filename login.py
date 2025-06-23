@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from config import get_db_connection
 import jwt, pymysql, datetime, os, logging, bcrypt
 from dotenv import load_dotenv
+from verify_jwt import token_required, verify_jwt_token
 
 auth = Blueprint('login', __name__)
 load_dotenv()
@@ -21,6 +22,7 @@ def generate_jwt(user_id, email):
 
 @auth.route('/login', methods=['POST'])
 def login():
+
     logging.info("POST request received for /login")
     data = request.get_json()
     email = data.get("email")
@@ -82,7 +84,8 @@ def login():
 
 
 @auth.route('/register', methods=['POST'])
-def register():
+@token_required
+def register(decoded):
     logging.info("POST request received for /register")
     data = request.get_json()
     email = data.get("email")
@@ -123,43 +126,5 @@ def register():
             connection.close()
 
 
-@auth.route('/verify-token', methods=['GET'])
-def verify_token():
-    token = request.headers.get('Authorization')
-    if not token:
-        logging.warning("Missing token in request headers")
-        return jsonify({'error': 'Missing token'}), 401
 
-    if token.startswith("Bearer "):
-        token = token[7:]
 
-    try:
-        decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        user_id = decoded['user_id']
-        email = decoded['email']
-        logging.info(f"Token decoded for user ID: {user_id} and email: {email}")
-
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        cursor.execute("SELECT jwt_token FROM login WHERE emp_id = %s AND email = %s", (user_id, email))
-        result = cursor.fetchone()
-
-        if result and result[0] == token:
-            logging.info(f"Token is valid for user ID: {user_id}")
-            return jsonify({'message': 'Token is valid', 'user_id': user_id, 'email': email}), 200
-        else:
-            logging.warning(f"Invalid or expired token for user ID: {user_id}")
-            return jsonify({'error': 'Invalid or expired token'}), 403
-
-    except jwt.ExpiredSignatureError:
-        logging.warning("Token expired")
-        return jsonify({'error': 'Token expired'}), 401
-    except jwt.InvalidTokenError:
-        logging.warning("Invalid token")
-        return jsonify({'error': 'Invalid token'}), 403
-
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()

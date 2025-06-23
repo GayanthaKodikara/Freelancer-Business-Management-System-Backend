@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from config import get_db_connection
 import logging, bcrypt
+from verify_jwt import token_required
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -10,14 +11,13 @@ emp = Blueprint('employee', __name__)
 
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 
 @emp.route('/employees', methods=['GET'])
-def get_employees():
+@token_required
+def get_employees(decoded):
     logging.info("GET request received for /employees")
     connection = None
     cursor = None
@@ -62,6 +62,7 @@ def get_employees():
 
 
 @emp.route('/employees', methods=['POST'])
+@token_required
 def add_employee():
     logging.info("POST request received for /employees")
     data = request.get_json()
@@ -112,6 +113,7 @@ def add_employee():
 
 
 @emp.route('/employees/<int:emp_id>', methods=['GET'])
+@token_required
 def get_employee(emp_id):
     logging.info(f"GET request for /employees/{emp_id}")
     connection = None
@@ -144,6 +146,7 @@ def get_employee(emp_id):
 
 
 @emp.route('/employees/<int:emp_id>', methods=['PUT'])
+@token_required
 def update_employee(emp_id):
     logging.info(f"PUT request for /employees/{emp_id}")
     data = request.get_json()
@@ -195,6 +198,7 @@ def update_employee(emp_id):
 
 
 @emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
+@token_required
 def update_permission(emp_id):
     logging.info(f"PUT request to update permission for emp_id: {emp_id}")
     data = request.get_json()
