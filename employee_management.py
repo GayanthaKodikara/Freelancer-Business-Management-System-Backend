@@ -63,7 +63,7 @@ def get_employees(decoded):
 
 @emp.route('/employees', methods=['POST'])
 @token_required
-def add_employee():
+def add_employee(decoded):
     logging.info("POST request received for /employees")
     data = request.get_json()
     logging.info(f"Received JSON data: {data}")
@@ -114,7 +114,7 @@ def add_employee():
 
 @emp.route('/employees/<int:emp_id>', methods=['GET'])
 @token_required
-def get_employee(emp_id):
+def get_employee(decoded, emp_id):
     logging.info(f"GET request for /employees/{emp_id}")
     connection = None
     cursor = None
@@ -147,7 +147,7 @@ def get_employee(emp_id):
 
 @emp.route('/employees/<int:emp_id>', methods=['PUT'])
 @token_required
-def update_employee(emp_id):
+def update_employee(decoded, emp_id):
     logging.info(f"PUT request for /employees/{emp_id}")
     data = request.get_json()
     logging.info(f"Received JSON: {data}")
@@ -162,7 +162,7 @@ def update_employee(emp_id):
     design_category = data.get('design_category')
     password = data.get('password')
 
-    hashed_pw = hash_password(password) if password else None
+    hashed_pw = hash_password(password) #if password else None
 
     connection = None
     cursor = None
@@ -199,7 +199,7 @@ def update_employee(emp_id):
 
 @emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
 @token_required
-def update_permission(emp_id):
+def update_permission(decoded ,emp_id):
     logging.info(f"PUT request to update permission for emp_id: {emp_id}")
     data = request.get_json()
     permission = data.get('permission')

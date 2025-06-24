@@ -14,7 +14,7 @@ tok = Blueprint('verify_jwt_token', __name__)
 @tok.route('/verify-token', methods=['GET'])
 def verify_jwt_token():
     token = request.headers.get('Authorization')
-    print(token)
+    print (token)
     if not token:
         logging.warning("Missing token in request headers")
         return None, jsonify({'error': 'Missing token'}), 401
