@@ -104,16 +104,16 @@ def get_projects(decoded):
         projects = []
         for row in results:
             project = {
-                'proj_id': row['proj_id'],
-                'proj_name': row['proj_name'],
-                'start_date': row['start_date'],
-                'end_date': row['end_date'],
-                'status': row['status'],
-                'remarks': row['remarks'], 
-                'client_id': row['client_id'],
-                'client_first_name': row['client_first_name'],
-                'client_company': row['client_company'],
-                'client_country': row['client_country']
+                'proj_id': row[0],
+                'proj_name': row[1],
+                'start_date': row[2],
+                'end_date': row[3],
+                'status': row[4],
+                'remarks': row[5], 
+                'client_id': row[6],
+                'client_first_name': row[7],
+                'client_company': row[8],
+                'client_country': row[9]
             }
             projects.append(project)
         logging.info("Successfully formatted project data for response.")

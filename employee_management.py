@@ -14,7 +14,7 @@ def hash_password(password):
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-
+#get all employees
 @emp.route('/employees', methods=['GET'])
 @token_required
 def get_employees(decoded):
@@ -60,7 +60,7 @@ def get_employees(decoded):
         if connection:
             connection.close()
 
-
+#add employee
 @emp.route('/employees', methods=['POST'])
 @token_required
 def add_employee(decoded):
@@ -77,7 +77,7 @@ def add_employee(decoded):
     workshop_name = data.get('workshop_name')
     design_category = data.get('design_category')
     permission = data.get('permission')
-    hashed_pw = hash_password(nic)  # Use NIC as initial password
+    hashed_pw = hash_password(nic)  
 
     if not first_name or not email or not nic:
         return jsonify({'error': 'Name, email and NIC are required'}), 400
@@ -93,8 +93,20 @@ def add_employee(decoded):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (first_name, last_name, email, address, nic, birth_day, role, workshop_name, design_category))
         connection.commit()
+        
+        cursor.execute("SELECT emp_id FROM employee WHERE email = %s AND nic = %s", (email, nic))
+        connection.commit()
 
-        cursor.execute("INSERT INTO login (email, hashed_password, permission) VALUES (%s, %s, %s)", (email, hashed_pw, permission))
+        result = cursor.fetchone() 
+    
+        emp_id = None
+        if result:
+            emp_id = result[0]
+
+        cursor.execute(
+            "INSERT INTO login (emp_id, email, hashed_password, permission) VALUES (%s, %s, %s, %s)",
+            (emp_id, email, hashed_pw, permission) 
+        )
         connection.commit()
 
         return jsonify({'message': 'Employee added successfully'}), 201
@@ -111,7 +123,7 @@ def add_employee(decoded):
         if connection:
             connection.close()
 
-
+#get single employee
 @emp.route('/employees/<int:emp_id>', methods=['GET'])
 @token_required
 def get_employee(decoded, emp_id):
@@ -144,7 +156,7 @@ def get_employee(decoded, emp_id):
         if connection:
             connection.close()
 
-
+# employee update
 @emp.route('/employees/<int:emp_id>', methods=['PUT'])
 @token_required
 def update_employee(decoded, emp_id):
@@ -162,7 +174,9 @@ def update_employee(decoded, emp_id):
     design_category = data.get('design_category')
     password = data.get('password')
 
-    hashed_pw = hash_password(password) #if password else None
+    hashed_pw = None
+    if password:
+        hashed_pw = hash_password(password)
 
     connection = None
     cursor = None
@@ -196,7 +210,7 @@ def update_employee(decoded, emp_id):
         if connection:
             connection.close()
 
-
+#remove employee permission from system
 @emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
 @token_required
 def update_permission(decoded ,emp_id):

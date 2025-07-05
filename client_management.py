@@ -107,13 +107,7 @@ def get_clients():
 # --- Serch Client ---
 @cli.route('/clients/suggestions', methods=['GET'])
 def get_client_suggestions():
-    """
-    GET /api/clients/suggestions?query=<search_term>
-
-    Returns client suggestions based on a search query.
-    Matches against 'first_name' and 'company' fields in the 'clients' table.
-    Limits the results to 10 for performance.
-    """
+   
     logging.info("GET request received for /clients/suggestions.")
     query = request.args.get('query', '').strip()  # Get the 'query' parameter from the URL, default to empty string
     logging.info(f"Client suggestion query received: '{query}'")
@@ -132,13 +126,7 @@ def get_client_suggestions():
         
         cursor = connection.cursor()
 
-        # Prepare the search pattern for SQL LIKE query
-        # Using '%' as a wildcard for partial matching
         search_pattern = f"%{query}%"
-
-        # Execute the query to find matching clients
-        # The query searches in 'first_name' OR 'company'
-        # It orders by 'first_name' and limits the results to 10
         cursor.execute(
             """
             SELECT
