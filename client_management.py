@@ -34,14 +34,14 @@ def add_client():
         cursor = connection.cursor()
 
         # Check if cliient_id already exists
-        cursor.execute("SELECT client_id FROM client WHERE client_id = %s", (client_id,))
+        cursor.execute("SELECT client_id FROM clients WHERE client_id = %s", (client_id,))
         result = cursor.fetchone()
         if result:
             connection.rollback()
             logging.warning(f"Client ID '{client_id}' already exists")
             return jsonify({'error': 'Client ID already exists'}), 400
 
-        cursor.execute("INSERT INTO client (client_id, first_name, last_name, country, company, email, contact_nu) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
+        cursor.execute("INSERT INTO clients (client_id, first_name, last_name, country, company, email, contact_nu) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
                        (client_id, first_name, last_name, country, company, email, contact_nu))
         connection.commit()
         logging.info(f"Client with ID '{client_id}' added successfully")
@@ -71,7 +71,7 @@ def get_clients():
     try:
         connection = get_db_connection() 
         cursor = connection.cursor()
-        cursor.execute("SELECT * FROM client")
+        cursor.execute("SELECT * FROM clients")
         results = cursor.fetchall()
         logging.info(f"Retrieved {len(results)} clients from the database")
 
@@ -135,7 +135,7 @@ def get_client_suggestions():
                 company,
                 country
             FROM
-                client
+                clients
             WHERE
                 first_name LIKE %s OR company LIKE %s
             ORDER BY
@@ -172,3 +172,57 @@ def get_client_suggestions():
             connection.close()
         logging.info("Database connection closed after GET /clients/suggestions.")
 
+@cli.route('/clients/<int:client_id>', methods=['GET'])
+def get_single_client(client_id):
+    
+    logging.info(f"GET request received for /clients/{client_id}")
+    connection = None
+    cursor = None
+    try:
+        connection = get_db_connection()
+        if connection is None:
+            logging.error("Failed to establish database connection for GET /clients/<client_id>")
+            return jsonify({'error': 'Failed to connect to the database'}), 500
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            SELECT
+                client_id,
+                first_name,
+                last_name,
+                country,
+                company,
+                email,
+                contact_no
+            FROM
+                clients
+            WHERE client_id = %s
+        """, (client_id,)) # Pass client_id as a tuple
+
+        result = cursor.fetchone()
+
+        if result:
+            client_data = {
+                'client_id': result[0],
+                'first_name': result[1],
+                'last_name': result[2],
+                'country': result[3],
+                'company': result[4],
+                'email': result[5],
+                'contact_no': result[6]
+            }
+            logging.info(f"Client {client_id} fetched successfully.")
+            return jsonify(client_data), 200
+        else:
+            logging.warning(f"Client with ID {client_id} not found.")
+            return jsonify({'error': 'Client not found'}), 404
+
+    except Exception as e:
+        logging.error(f"Error fetching client {client_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+        logging.info(f"Database connection closed after GET /clients/{client_id}")

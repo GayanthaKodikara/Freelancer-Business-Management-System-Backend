@@ -41,7 +41,7 @@ def add_project(decoded):
         cursor = connection.cursor()
 
         # Check if proj_id already exists
-        cursor.execute("SELECT proj_id FROM project WHERE proj_id = %s", (proj_id,))
+        cursor.execute("SELECT proj_id FROM projects WHERE proj_id = %s", (proj_id,))
         result = cursor.fetchone()
         if result:
             connection.rollback()
@@ -49,7 +49,7 @@ def add_project(decoded):
             return jsonify({'error': f"Project ID '{proj_id}' already exists."}), 409 
 
         cursor.execute(
-            "INSERT INTO project (proj_id, proj_name, start_date, end_date, status, remarks, client_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO projects (proj_id, proj_name, start_date, end_date, status, remarks, client_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (proj_id, proj_name, start_date, end_date, status, remarks, client_id)
         )
         connection.commit() 
@@ -91,11 +91,12 @@ def get_projects(decoded):
                 p.end_date,
                 p.status,
                 p.remarks,
+                p.url,
                 c.client_id,
                 c.first_name AS client_first_name,
                 c.company AS client_company,
                 c.country AS client_country
-            FROM project p LEFT JOIN client c ON p.client_id = c.client_id ORDER BY p.start_date DESC;
+            FROM projects p LEFT JOIN clients c ON p.client_id = c.client_id ORDER BY p.start_date DESC;
         """)
         results = cursor.fetchall()
         logging.info(f"Retrieved {len(results)} projects from the database.")
@@ -109,10 +110,11 @@ def get_projects(decoded):
                 'end_date': row[3],
                 'status': row[4],
                 'remarks': row[5], 
-                'client_id': row[6],
-                'client_first_name': row[7],
-                'client_company': row[8],
-                'client_country': row[9]
+                'url': row[6],
+                'client_id': row[7],
+                'client_first_name': row[8],
+                'client_company': row[9],
+                'client_country': row[10]
             }
             projects.append(project)
         logging.info("Successfully formatted project data for response.")
@@ -132,7 +134,7 @@ def get_projects(decoded):
         logging.info("Database connection closed after GET /projects.")
 
 
-@prj.route('/projects/<string:project_id>', methods=['GET'])
+@prj.route('/projects/<int:project_id>', methods=['GET'])
 @token_required
 def get_project_by_id(decoded, project_id):
     logging.info(f"GET request received for /projects/{project_id} (get_project_by_id)")
@@ -153,27 +155,29 @@ def get_project_by_id(decoded, project_id):
                 p.end_date,
                 p.status,
                 p.remarks,
+                p.url,
                 c.client_id,
                 c.first_name AS client_first_name,
                 c.company AS client_company,
                 c.country AS client_country
-            FROM project p LEFT JOIN clients c ON p.client_id = c.client_id WHERE p.proj_id = %s;
+            FROM projects p LEFT JOIN clients c ON p.client_id = c.client_id WHERE p.proj_id = %s;
         """, (project_id,))
         result = cursor.fetchone()
 
         if result:
             project = {
-                'proj_id': result['proj_id'],
-                'proj_name': result['proj_name'],
-                'start_date': result['start_date'],
-                'end_date': result['end_date'],
-                'status': result['status'],
-                'remarks': result['remarks'],
-                'client_id': result['client_id'],
-                'client_name': f"{result['client_first_name']} ({result['client_company']})" if result['client_first_name'] else '', # Formatted for frontend
-                'client_first_name': result['client_first_name'],
-                'client_company': result['client_company'],
-                'client_country': result['client_country']
+                'proj_id': result[0],
+                'proj_name': result[1],
+                'start_date': str(result[2]),
+                'end_date': str(result[3]),
+                'status': result[4],
+                'remarks': result[5],
+                'url':result[6],
+                'client_id': result[7],
+                'client_name': f"{result[8]} ({result[9]})" if result[8] else '', # Formatted for frontend
+                'client_first_name': result[8],
+                'client_company': result[9],
+                'client_country': result[10]
             }
             logging.info(f"Successfully retrieved project with ID '{project_id}'.")
             return jsonify(project), 200
@@ -192,7 +196,7 @@ def get_project_by_id(decoded, project_id):
         logging.info(f"Database connection closed after GET /projects/{project_id}.")
 
 
-@prj.route('/projects/<string:project_id>', methods=['PUT'])
+@prj.route('/projects/<int:project_id>', methods=['PUT'])
 @token_required
 def update_project(decoded, project_id):
    
@@ -222,7 +226,7 @@ def update_project(decoded, project_id):
 
         cursor.execute(
             """
-            UPDATE project
+            UPDATE projects
             SET proj_name = %s, start_date = %s, end_date = %s, status = %s, remarks = %s, client_id = %s
             WHERE proj_id = %s
             """,
@@ -251,84 +255,84 @@ def update_project(decoded, project_id):
         logging.info(f"Database connection closed after PUT /projects/{project_id}.")
 
 
-@prj.route('/projects/status/<string:project_id>', methods=['PUT'])
-@token_required
-def update_project_status(decoded, project_id):
+# @prj.route('/projects/status/<int:project_id>', methods=['PUT'])
+# @token_required
+# def update_project_status(decoded, project_id):
     
-    logging.info(f"PUT request received for /projects/status/{project_id} (update_project_status)")
-    connection = None
-    cursor = None
-    data = request.get_json()
-    status = data.get('status') 
+#     logging.info(f"PUT request received for /projects/status/{project_id} (update_project_status)")
+#     connection = None
+#     cursor = None
+#     data = request.get_json()
+#     status = data.get('status') 
 
-    if not status:
-        logging.warning("Status field is missing in update_project_status request.")
-        return jsonify({'error': 'Status field is required for status update.'}), 400
+#     if not status:
+#         logging.warning("Status field is missing in update_project_status request.")
+#         return jsonify({'error': 'Status field is required for status update.'}), 400
 
-    try:
-        connection = get_db_connection()
-        if connection is None:
-            logging.error(f"Failed to establish database connection for updating status of project '{project_id}'.")
-            return jsonify({'error': 'Failed to connect to the database'}), 500
-        cursor = connection.cursor()
+#     try:
+#         connection = get_db_connection()
+#         if connection is None:
+#             logging.error(f"Failed to establish database connection for updating status of project '{project_id}'.")
+#             return jsonify({'error': 'Failed to connect to the database'}), 500
+#         cursor = connection.cursor()
 
-        cursor.execute(
-            "UPDATE projects SET status = %s WHERE proj_id = %s",
-            (status, project_id)
-        )
-        connection.commit()
+#         cursor.execute(
+#             "UPDATE projects SET status = %s WHERE proj_id = %s",
+#             (status, project_id)
+#         )
+#         connection.commit()
 
-        if cursor.rowcount == 0:
-            logging.warning(f"Attempted to update status for non-existent project ID: {project_id}.")
-            return jsonify({'error': 'Project not found or no changes made'}), 404
+#         if cursor.rowcount == 0:
+#             logging.warning(f"Attempted to update status for non-existent project ID: {project_id}.")
+#             return jsonify({'error': 'Project not found or no changes made'}), 404
         
-        logging.info(f"Status for project '{project_id}' updated to '{status}' successfully.")
-        return jsonify({'message': 'Project status updated successfully'}), 200
+#         logging.info(f"Status for project '{project_id}' updated to '{status}' successfully.")
+#         return jsonify({'message': 'Project status updated successfully'}), 200
 
-    except Exception as e:
-        if connection:
-            connection.rollback()
-        logging.error(f"Error processing PUT request for /projects/status/{project_id}: {e}", exc_info=True)
-        return jsonify({'error': f"An internal server error occurred: {str(e)}"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
-        logging.info(f"Database connection closed after PUT /projects/status/{project_id}.")
+#     except Exception as e:
+#         if connection:
+#             connection.rollback()
+#         logging.error(f"Error processing PUT request for /projects/status/{project_id}: {e}", exc_info=True)
+#         return jsonify({'error': f"An internal server error occurred: {str(e)}"}), 500
+#     finally:
+#         if cursor:
+#             cursor.close()
+#         if connection:
+#             connection.close()
+#         logging.info(f"Database connection closed after PUT /projects/status/{project_id}.")
 
-@prj.route('/projects/<string:project_id>', methods=['DELETE'])
-@token_required
-def delete_project(decoded, project_id):
+# @prj.route('/projects/<int:project_id>', methods=['DELETE'])
+# @token_required
+# def delete_project(decoded, project_id):
   
-    logging.info(f"DELETE request received for /projects/{project_id} (delete_project)")
-    connection = None
-    cursor = None
-    try:
-        connection = get_db_connection()
-        if connection is None:
-            logging.error(f"Failed to establish database connection for deleting project '{project_id}'.")
-            return jsonify({'error': 'Failed to connect to the database'}), 500
-        cursor = connection.cursor()
+#     logging.info(f"DELETE request received for /projects/{project_id} (delete_project)")
+#     connection = None
+#     cursor = None
+#     try:
+#         connection = get_db_connection()
+#         if connection is None:
+#             logging.error(f"Failed to establish database connection for deleting project '{project_id}'.")
+#             return jsonify({'error': 'Failed to connect to the database'}), 500
+#         cursor = connection.cursor()
 
-        cursor.execute("DELETE FROM projects WHERE proj_id = %s", (project_id,))
-        connection.commit()
+#         cursor.execute("DELETE FROM projects WHERE proj_id = %s", (project_id,))
+#         connection.commit()
 
-        if cursor.rowcount == 0:
-            logging.warning(f"Attempted to delete non-existent project ID: {project_id}.")
-            return jsonify({'error': 'Project not found'}), 404
+#         if cursor.rowcount == 0:
+#             logging.warning(f"Attempted to delete non-existent project ID: {project_id}.")
+#             return jsonify({'error': 'Project not found'}), 404
         
-        logging.info(f"Project with ID '{project_id}' deleted successfully.")
-        return jsonify({'message': 'Project deleted successfully'}), 200
+#         logging.info(f"Project with ID '{project_id}' deleted successfully.")
+#         return jsonify({'message': 'Project deleted successfully'}), 200
 
-    except Exception as e:
-        if connection:
-            connection.rollback()
-        logging.error(f"Error processing DELETE request for /projects/{project_id}: {e}")
-        return jsonify({'error': f"An internal server error occurred: {str(e)}"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
-        logging.info(f"Database connection closed after DELETE /projects/{project_id}.")
+#     except Exception as e:
+#         if connection:
+#             connection.rollback()
+#         logging.error(f"Error processing DELETE request for /projects/{project_id}: {e}")
+#         return jsonify({'error': f"An internal server error occurred: {str(e)}"}), 500
+#     finally:
+#         if cursor:
+#             cursor.close()
+#         if connection:
+#             connection.close()
+#         logging.info(f"Database connection closed after DELETE /projects/{project_id}.")
