@@ -1,4 +1,3 @@
-
 from flask import Blueprint, jsonify, request
 from config import get_db_connection 
 import logging
