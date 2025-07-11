@@ -21,18 +21,31 @@ def add_project(decoded):
     data = request.get_json()
     logging.info(f"Received project data: {data}")
 
-    proj_id = data.get('proj_id')
+    # proj_id = data.get('proj_id')
     proj_name = data.get('proj_name')
     start_date = data.get('start_date')
     end_date = data.get('end_date')
     status = data.get('status')
+    url = data.get('url')
     remarks = data.get('remarks') 
     client_id = data.get('client_id') 
 
-    # Input validation
-    if not all([proj_id, proj_name, start_date, end_date, status]):
-        logging.warning("Required fields (proj_id, proj_name, start_date, end_date, status) are missing in POST request.")
-        return jsonify({'error': 'Project ID, Project Name, Start Date, End Date, and Status are required.'}), 400
+    # Required field validation
+    if not all([proj_name, start_date, end_date, status]):
+        logging.warning("Missing required fields")
+        return jsonify({'error': 'Project Name, Start Date, End Date, and Status are required.'}), 400
+
+    # === Parse and validate dates ===
+    start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+    end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+    # === Validate logical date order ===
+    if start_date_obj >= end_date_obj:
+        return jsonify({'error': 'Start Date must be before End Date'}), 400
+
+    # === Validate future end date ===
+    if end_date_obj <= datetime.now().date():
+        return jsonify({'error': 'End Date must be a future date'}), 400
 
     try:
         connection = get_db_connection()
@@ -41,21 +54,22 @@ def add_project(decoded):
             return jsonify({'error': 'Failed to connect to the database'}), 500
         cursor = connection.cursor()
 
-        # Check if proj_id already exists
-        cursor.execute("SELECT proj_id FROM projects WHERE proj_id = %s", (proj_id,))
-        result = cursor.fetchone()
-        if result:
-            connection.rollback()
-            logging.warning(f"Project ID '{proj_id}' already exists. Aborting insertion.")
-            return jsonify({'error': f"Project ID '{proj_id}' already exists."}), 409 
-
         cursor.execute(
-            "INSERT INTO projects (proj_id, proj_name, start_date, end_date, status, remarks, client_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (proj_id, proj_name, start_date, end_date, status, remarks, client_id)
+            "INSERT INTO projects ( proj_name, start_date, end_date, status, url, remarks, client_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            ( proj_name, start_date, end_date, status, url, remarks, client_id)
         )
 
         current_datetime = datetime.now() # Get current date and time
         breakdown_description = f"Project created with initial status: {status}" 
+
+        cursor.execute("SELECT proj_id FROM projects WHERE proj_name = %s AND client_id = %s", (proj_name, client_id))
+        connection.commit()
+
+        result = cursor.fetchone() 
+    
+        proj_id = None
+        if result:
+            proj_id = result[0]
 
         cursor.execute(
             "INSERT INTO proj_breakdown (proj_id, date_time, description) VALUES (%s, %s, %s)",
@@ -219,12 +233,26 @@ def update_project(decoded, project_id):
     start_date = data.get('start_date')
     end_date = data.get('end_date')
     status = data.get('status')
+    url = data.get('url')
     remarks = data.get('remarks')
     client_id = data.get('client_id') 
 
+   # Required field validation
     if not all([proj_name, start_date, end_date, status]):
-        logging.warning("Missing required fields for project update.")
-        return jsonify({'error': 'Project Name, Start Date, End Date, and Status are required for update.'}), 400
+        logging.warning("Missing required fields")
+        return jsonify({'error': 'Project Name, Start Date, End Date, and Status are required.'}), 400
+
+    # === Parse and validate dates ===
+    start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+    end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+    # === Validate logical date order ===
+    if start_date_obj >= end_date_obj:
+        return jsonify({'error': 'Start Date must be before End Date'}), 400
+
+    # === Validate future end date ===
+    if end_date_obj <= datetime.now().date():
+        return jsonify({'error': 'End Date must be a future date'}), 400
 
     try:
         connection = get_db_connection()
@@ -236,10 +264,10 @@ def update_project(decoded, project_id):
         cursor.execute(
             """
             UPDATE projects
-            SET proj_name = %s, start_date = %s, end_date = %s, status = %s, remarks = %s, client_id = %s
+            SET proj_name = %s, start_date = %s, end_date = %s, status = %s, url = %s, remarks = %s, client_id = %s
             WHERE proj_id = %s
             """,
-            (proj_name, start_date, end_date, status, remarks, client_id, project_id)
+            (proj_name, start_date, end_date, status, url, remarks, client_id, project_id)
         )
 
         current_datetime = datetime.now() # Get current date and time

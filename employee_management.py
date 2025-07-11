@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify, request
 from config import get_db_connection
 import logging, bcrypt
 from verify_jwt import token_required
+from datetime import datetime
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -81,6 +83,33 @@ def add_employee(decoded):
 
     if not first_name or not email or not nic:
         return jsonify({'error': 'Name, email and NIC are required'}), 400
+    
+    # ===== Name Validation =====
+    name_pattern = r'^[A-Za-z\s\-]+$'
+    if not re.match(name_pattern, first_name):
+        return jsonify({'error': 'First name must contain only letters, spaces, or hyphens'}), 400
+    if last_name and not re.match(name_pattern, last_name):
+        return jsonify({'error': 'Last name must contain only letters, spaces, or hyphens'}), 400
+
+    # ===== Email Validation =====
+    email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$'
+    if not re.match(email_pattern, email):
+        return jsonify({'error': 'Invalid email format'}), 400
+
+    # ===== NIC Validation =====
+    nic_pattern_12 = r'^\d{12}$'
+    nic_pattern_9v = r'^\d{9}V$'
+    if not (re.match(nic_pattern_12, nic) or re.match(nic_pattern_9v, nic)):
+        return jsonify({'error': 'NIC must be 12 digits or 9 digits followed by capital "V"'}), 400
+
+    # ===== Birthday Validation =====
+    try:
+        birth_date = datetime.strptime(birth_day, '%Y-%m-%d')
+        age = (datetime.now() - birth_date).days / 365.25
+        if age < 18:
+            return jsonify({'error': 'Employee must be at least 18 years old'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid birth_day format. Use YYYY-MM-DD'}), 400
 
     connection = None
     cursor = None
@@ -177,6 +206,37 @@ def update_employee(decoded, emp_id):
     hashed_pw = None
     if password:
         hashed_pw = hash_password(password)
+
+    # ===== Required Field Checks =====
+    if not first_name or not email or not nic:
+        return jsonify({'error': 'First name, email, and NIC are required'}), 400
+    
+    # ===== Name Validation =====
+    name_pattern = r'^[A-Za-z\s\-]+$'
+    if not re.match(name_pattern, first_name):
+        return jsonify({'error': 'First name must contain only letters, spaces, or hyphens'}), 400
+    if last_name and not re.match(name_pattern, last_name):
+        return jsonify({'error': 'Last name must contain only letters, spaces, or hyphens'}), 400
+
+    # ===== Email Validation =====
+    email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$'
+    if not re.match(email_pattern, email):
+        return jsonify({'error': 'Invalid email format'}), 400
+
+    # ===== NIC Validation =====
+    nic_pattern_12 = r'^\d{12}$'
+    nic_pattern_9v = r'^\d{9}V$'
+    if not (re.match(nic_pattern_12, nic) or re.match(nic_pattern_9v, nic)):
+        return jsonify({'error': 'NIC must be 12 digits or 9 digits followed by capital "V"'}), 400
+
+    # ===== Birthday Validation =====
+    try:
+        birth_date = datetime.strptime(birth_day, '%Y-%m-%d')
+        age = (datetime.now() - birth_date).days / 365.25
+        if age < 18:
+            return jsonify({'error': 'Employee must be at least 18 years old'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid birth_day format. Use YYYY-MM-DD'}), 400
 
     connection = None
     cursor = None

@@ -11,7 +11,7 @@ inv = Blueprint('inventory', __name__)
 
 @inv.route('/inventory', methods=['GET'])
 @token_required
-def get_inventory():
+def get_inventory(decoded):
     logging.info("GET request received for /inventory")
     connection = None
     cursor = None
@@ -22,7 +22,6 @@ def get_inventory():
             return jsonify({'error': 'Failed to connect to the database'}), 500
         cursor = connection.cursor()
 
-        # Ensure the column order in the SELECT matches the order in which you assign to inventory_item dictionary keys
         cursor.execute("SELECT inventory_code, name, shop, buying_date, price, quantity, available_quantity, location FROM inventory")
         results = cursor.fetchall()
         logging.info(f"Retrieved {len(results)} inventory items from the database")
@@ -56,7 +55,7 @@ def get_inventory():
 
 @inv.route('/inventory', methods=['POST'])
 @token_required
-def add_inventory():
+def add_inventory(decoded):
     logging.info("POST request received for /inventory")
     connection = None
     cursor = None
@@ -72,27 +71,27 @@ def add_inventory():
         available_quantity = data.get('quantity')
         location = data.get('location')
 
-        # server-side validation
-        if not all([name, buying_date, price, quantity, available_quantity, location]):
+         # =====  validation =====
+        if not all([name, buying_date, price, quantity, location]):
             logging.warning("Missing required fields for new inventory item")
-            return jsonify({'error': 'Missing one or more required fields: name, buying_date, price, quantity, available_quantity, location'}), 400
+            return jsonify({'error': 'Missing one or more required fields: name, buying_date, price, quantity, location'}), 400
 
-        # Convert types and validate
-        # try:
-        #     # buying_date = datetime.strptime(buying_date_str, '%Y-%m-%d').date()
-        #     price = float(price)
-        #     quantity = int(quantity)
-        #     # available_quantity = int(available_quantity)
-        # except ValueError as ve:
-        #     logging.error(f"Data type conversion error for new inventory: {ve}")
-        #     return jsonify({'error': f'Invalid data type for fields: {ve}'}), 400
+        # ===== Type and value validations =====
+       
+        # Validate and convert types
+        price = float(price)
+        quantity = int(quantity)
 
-        # if quantity < 0 or available_quantity < 0:
-        #     return jsonify({'error': 'Quantity and Available Quantity cannot be negative'}), 400
-        # if available_quantity > quantity:
-        #     return jsonify({'error': 'Available Quantity cannot be greater than total Quantity'}), 400
+        # Validate buying_date
+        buying_date_obj = datetime.strptime(buying_date, '%Y-%m-%d').date()
+        if buying_date_obj > datetime.now().date():
+            return jsonify({'error': 'Buying date must not be in the future'}), 400
+
         if price <= 0:
             return jsonify({'error': 'Price must be greater than zero'}), 400
+
+        if quantity <= 0:
+            return jsonify({'error': 'Quantity must be a positive number'}), 400
 
 
         connection = get_db_connection()
@@ -128,7 +127,7 @@ def add_inventory():
 
 @inv.route('/inventory/<string:inventory_code>', methods=['GET'])
 @token_required
-def get_inventory_item(inventory_code):
+def get_inventory_item(decoded, inventory_code):
     logging.info(f"GET request received for /inventory/{inventory_code}")
     connection = None
     cursor = None
@@ -182,7 +181,7 @@ def get_inventory_item(inventory_code):
 
 @inv.route('/inventory/<int:inventory_code>', methods=['PUT'])
 @token_required
-def update_inventory(inventory_code):
+def update_inventory(decoded, inventory_code):
     logging.info(f"PUT request received for /inventory/{inventory_code}")
     connection = None
     cursor = None
@@ -198,14 +197,27 @@ def update_inventory(inventory_code):
         quantity = data.get('quantity')
         location = data.get('location')
 
-        # Basic server-side validation
+  # ===== Server-side field validation =====
         if not all([name, buying_date, price, quantity, location]):
-            logging.warning(f"Missing required fields for inventory update (code {inventory_code})")
-            return jsonify({'error': 'Missing one or more required fields: name, buying_date, price, quantity, available_quantity, location'}), 400
+            logging.warning("Missing required fields for new inventory item")
+            return jsonify({'error': 'Missing one or more required fields: name, buying_date, price, quantity, location'}), 400
+
+        # ===== validations =====
+       
+        # Validate and convert types
+        price = float(price)
+        quantity = int(quantity)
+
+        # Validate buying_date
+        buying_date_obj = datetime.strptime(buying_date, '%Y-%m-%d').date()
+        if buying_date_obj > datetime.now().date():
+            return jsonify({'error': 'Buying date must not be in the future'}), 400
 
         if price <= 0:
             return jsonify({'error': 'Price must be greater than zero'}), 400
 
+        if quantity <= 0:
+            return jsonify({'error': 'Quantity must be a positive number'}), 400
 
         connection = get_db_connection()
         if connection is None:

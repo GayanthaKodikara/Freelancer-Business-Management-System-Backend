@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from config import get_db_connection
 import logging
 from verify_jwt import token_required
+import re
 
 cli = Blueprint('clients',__name__)
 
@@ -9,14 +10,14 @@ cli = Blueprint('clients',__name__)
 # --- Add Client ---
 @cli.route('/clients', methods=['POST'])
 @token_required
-def add_client():
+def add_client(decoded):
     logging.info("POST request received for /clients")
     connection = None
     cursor = None
     data = request.get_json()
     logging.info(f"Received JSON data: {data}")
 
-    client_id = data['client_id']
+    # client_id = data['client_id']
     first_name = data['first_name']
     last_name = data['last_name']
     country = data['country']
@@ -24,9 +25,28 @@ def add_client():
     email = data['email']
     contact_nu = data['contact_nu']
 
-    if not client_id or not email:
-        logging.warning("Required fields (client_id, email) are missing in POST request")
-        return jsonify({'error': 'Client ID and Client email are required'}), 400
+     # ===== Required Fields =====
+    if not email or not first_name:
+        return jsonify({'error': 'Client ID, first name, and email are required'}), 400
+
+    # ===== First and Last Name Validation =====
+    name_pattern = r'^[A-Za-z\s\-]+$'
+    if not re.match(name_pattern, first_name):
+        return jsonify({'error': 'First name must contain only letters, spaces, or hyphens'}), 400
+    if last_name and not re.match(name_pattern, last_name):
+        return jsonify({'error': 'Last name must contain only letters, spaces, or hyphens'}), 400
+
+    # ===== Email Validation =====
+    email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w{2,}$'
+    if not re.match(email_pattern, email):
+        return jsonify({'error': 'Invalid email format'}), 400
+
+    # ===== Contact Number Validation (optional field) =====
+    if contact_nu:
+        contact_pattern = r'^\+?\d{10,15}$'
+    if not re.match(contact_pattern, contact_nu):
+        return jsonify({'error': 'Contact number must be 10 to 15 digits and may start with "+"'}), 400
+
 
     try:
         connection = get_db_connection()
@@ -35,17 +55,17 @@ def add_client():
         cursor = connection.cursor()
 
         # Check if cliient_id already exists
-        cursor.execute("SELECT client_id FROM clients WHERE client_id = %s", (client_id,))
-        result = cursor.fetchone()
-        if result:
-            connection.rollback()
-            logging.warning(f"Client ID '{client_id}' already exists")
-            return jsonify({'error': 'Client ID already exists'}), 400
+        # cursor.execute("SELECT client_id FROM clients WHERE client_id = %s", (client_id,))
+        # result = cursor.fetchone()
+        # if result:
+        #     connection.rollback()
+        #     logging.warning(f"Client ID '{client_id}' already exists")
+        #     return jsonify({'error': 'Client ID already exists'}), 400
 
-        cursor.execute("INSERT INTO clients (client_id, first_name, last_name, country, company, email, contact_nu) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
-                       (client_id, first_name, last_name, country, company, email, contact_nu))
+        cursor.execute("INSERT INTO clients (first_name, last_name, country, company, email, contact_nu) VALUES ( %s, %s, %s, %s, %s, %s)", 
+                       (first_name, last_name, country, company, email, contact_nu))
         connection.commit()
-        logging.info(f"Client with ID '{client_id}' added successfully")
+        logging.info(f"Client added successfully")
         return jsonify({'message': 'Client added successfully'}), 201
 
     except Exception as e:
@@ -66,7 +86,7 @@ def add_client():
 # --- Get Clients ---
 @cli.route('/clients', methods=['GET'])
 @token_required
-def get_clients():
+def get_clients(decoded):
     logging.info("GET request received for /clients")
     connection = None
     cursor = None
@@ -109,7 +129,7 @@ def get_clients():
 # --- Serch Client ---
 @cli.route('/clients/suggestions', methods=['GET'])
 @token_required
-def get_client_suggestions():
+def get_client_suggestions(decoded):
    
     logging.info("GET request received for /clients/suggestions.")
     query = request.args.get('query', '').strip()  # Get the 'query' parameter from the URL, default to empty string
@@ -177,7 +197,7 @@ def get_client_suggestions():
 
 @cli.route('/clients/<int:client_id>', methods=['GET'])
 @token_required
-def get_single_client(client_id):
+def get_single_client(decoded, client_id):
     
     logging.info(f"GET request received for /clients/{client_id}")
     connection = None
@@ -197,7 +217,7 @@ def get_single_client(client_id):
                 country,
                 company,
                 email,
-                contact_no
+                contact_nu
             FROM
                 clients
             WHERE client_id = %s
@@ -213,7 +233,7 @@ def get_single_client(client_id):
                 'country': result[3],
                 'company': result[4],
                 'email': result[5],
-                'contact_no': result[6]
+                'contact_nu': result[6]
             }
             logging.info(f"Client {client_id} fetched successfully.")
             return jsonify(client_data), 200
