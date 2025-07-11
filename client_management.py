@@ -1,13 +1,14 @@
 from flask import Blueprint, jsonify, request
 from config import get_db_connection
 import logging
-
+from verify_jwt import token_required
 
 cli = Blueprint('clients',__name__)
 
 
 # --- Add Client ---
 @cli.route('/clients', methods=['POST'])
+@token_required
 def add_client():
     logging.info("POST request received for /clients")
     connection = None
@@ -64,6 +65,7 @@ def add_client():
 
 # --- Get Clients ---
 @cli.route('/clients', methods=['GET'])
+@token_required
 def get_clients():
     logging.info("GET request received for /clients")
     connection = None
@@ -106,6 +108,7 @@ def get_clients():
 
 # --- Serch Client ---
 @cli.route('/clients/suggestions', methods=['GET'])
+@token_required
 def get_client_suggestions():
    
     logging.info("GET request received for /clients/suggestions.")
@@ -173,6 +176,7 @@ def get_client_suggestions():
         logging.info("Database connection closed after GET /clients/suggestions.")
 
 @cli.route('/clients/<int:client_id>', methods=['GET'])
+@token_required
 def get_single_client(client_id):
     
     logging.info(f"GET request received for /clients/{client_id}")

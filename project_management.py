@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from config import get_db_connection 
 import logging
 from verify_jwt import token_required
+from datetime import datetime
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -52,12 +53,20 @@ def add_project(decoded):
             "INSERT INTO projects (proj_id, proj_name, start_date, end_date, status, remarks, client_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (proj_id, proj_name, start_date, end_date, status, remarks, client_id)
         )
+
+        current_datetime = datetime.now() # Get current date and time
+        breakdown_description = f"Project created with initial status: {status}" 
+
+        cursor.execute(
+            "INSERT INTO proj_breakdown (proj_id, date_time, description) VALUES (%s, %s, %s)",
+            (proj_id, current_datetime, breakdown_description)
+        )
+
         connection.commit() 
         logging.info(f"Project with ID '{proj_id}' added successfully.")
         return jsonify({'message': 'Project added successfully', 'proj_id': proj_id}), 201 
 
     except Exception as e:
-        # Catch any exceptions during database operation
         if connection:
             connection.rollback() 
         logging.error(f"Error processing POST request for /projects: {e}") 
@@ -232,6 +241,15 @@ def update_project(decoded, project_id):
             """,
             (proj_name, start_date, end_date, status, remarks, client_id, project_id)
         )
+
+        current_datetime = datetime.now() # Get current date and time
+        breakdown_description = f"Project updated: {status}" 
+
+        cursor.execute(
+            "INSERT INTO proj_breakdown (proj_id, date_time, description) VALUES (%s, %s, %s)",
+            (project_id, current_datetime, breakdown_description)
+        )
+
         connection.commit()
 
         if cursor.rowcount == 0:

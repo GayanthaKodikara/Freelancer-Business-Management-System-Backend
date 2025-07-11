@@ -16,7 +16,7 @@ def generate_jwt(user_id, email, role):
         'user_id': user_id,
         'email': email,
         'role': role,
-        'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=150)
+        'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=300)
     }, SECRET_KEY, algorithm='HS256')
     logging.info(f"JWT generated for user ID: {user_id} and email: {email}")
     return token

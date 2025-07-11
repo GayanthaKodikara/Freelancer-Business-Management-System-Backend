@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from config import get_db_connection
 import logging
 from datetime import datetime
+from verify_jwt import token_required
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -9,6 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 inv = Blueprint('inventory', __name__)
 
 @inv.route('/inventory', methods=['GET'])
+@token_required
 def get_inventory():
     logging.info("GET request received for /inventory")
     connection = None
@@ -53,6 +55,7 @@ def get_inventory():
         logging.info("Database connection closed after GET /inventory")
 
 @inv.route('/inventory', methods=['POST'])
+@token_required
 def add_inventory():
     logging.info("POST request received for /inventory")
     connection = None
@@ -124,7 +127,7 @@ def add_inventory():
 
 
 @inv.route('/inventory/<string:inventory_code>', methods=['GET'])
-# @token_required
+@token_required
 def get_inventory_item(inventory_code):
     logging.info(f"GET request received for /inventory/{inventory_code}")
     connection = None
@@ -178,6 +181,7 @@ def get_inventory_item(inventory_code):
 
 
 @inv.route('/inventory/<int:inventory_code>', methods=['PUT'])
+@token_required
 def update_inventory(inventory_code):
     logging.info(f"PUT request received for /inventory/{inventory_code}")
     connection = None
@@ -227,3 +231,99 @@ def update_inventory(inventory_code):
         if connection:
             connection.close()
         logging.info(f"Database connection closed after PUT /inventory/{inventory_code}")
+
+
+# Assign Inventory To Project
+@inv.route('/inventory/assign/<int:inventory_code>', methods=['PUT'])
+@token_required
+def assign_inventory(decoded, inventory_code):
+    
+    logging.info(f"PUT request received for /inventory/assign/{inventory_code}")
+    connection = None
+    cursor = None
+    data = request.get_json()
+    logging.info(f"Received assignment data: {data}")
+
+    proj_id = data.get('proj_id')
+    request_quantity = data.get('requested_quantity')
+    description = data.get('description') 
+
+    # Input validation
+    if not all([proj_id, request_quantity, description is not None]):
+        logging.warning("Required fields (proj_id, quantity, description) are missing in PUT request.")
+        return jsonify({'error': 'Project ID, quantity, and description are required.'}), 400
+
+
+    try:
+        connection = get_db_connection()
+        if connection is None:
+            logging.error("Failed to establish database connection in assign_inventory.")
+            return jsonify({'error': 'Failed to connect to the database'}), 500
+        cursor = connection.cursor()
+        connection.begin()
+
+        # Check available quantity and get inventory name
+        cursor.execute(
+            "SELECT available_quantity, name FROM inventory WHERE inventory_code = %s FOR UPDATE",
+            (inventory_code,)
+        )
+        inventory_item = cursor.fetchone()
+
+        if not inventory_item:
+            connection.rollback()
+            logging.warning(f"Inventory item with code '{inventory_code}' not found.")
+            return jsonify({'error': f"Inventory item with code '{inventory_code}' not found."}), 404
+
+        current_available_quantity = inventory_item[0]
+        inventory_name = inventory_item[1]
+
+        if current_available_quantity < request_quantity:
+            connection.rollback()
+            logging.warning(f"Insufficient quantity for inventory item '{inventory_code}'. Available: {current_available_quantity}, Requested: {request_quantity}")
+            return jsonify({
+                'error': f"Insufficient quantity. Only {current_available_quantity} units of '{inventory_name}' available."
+            }), 400
+
+        # Update the inventory table
+        new_available_quantity = current_available_quantity - request_quantity
+        cursor.execute(
+            "UPDATE inventory SET available_quantity = %s WHERE inventory_code = %s",
+            (new_available_quantity, inventory_code)
+        )
+        logging.info(f"Inventory '{inventory_code}' updated. New available quantity: {new_available_quantity}")
+
+        # Get current date and time for insertions
+        current_datetime = datetime.now()
+
+        # Insert into proj_cost table
+        cursor.execute(
+            "INSERT INTO proj_cost (proj_id, inventory_code, date_time, description, quantity) VALUES (%s, %s, %s, %s, %s)",
+            (proj_id, inventory_code, current_datetime, description, request_quantity)
+        )
+        logging.info(f"Cost entry added to proj_cost for project '{proj_id}' with inventory '{inventory_code}'.")
+
+        # Insert into proj_breakdown table
+        breakdown_description = f"Assigned {inventory_name} ({request_quantity} units) to project {proj_id}"
+        cursor.execute(
+            "INSERT INTO proj_breakdown (proj_id, date_time, description) VALUES (%s, %s, %s)",
+            (proj_id, current_datetime, breakdown_description)
+        )
+        logging.info(f"Breakdown entry added to proj_breakdown for project '{proj_id}'.")
+
+        # Commit the transaction if all operations are successful
+        connection.commit()
+        logging.info(f"Inventory assignment for '{inventory_code}' to project '{proj_id}' completed successfully.")
+        return jsonify({'message': 'Inventory assigned successfully', 'inventory_code': inventory_code, 'proj_id': proj_id}), 200
+
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        logging.error(f"Error processing PUT request for /inventory/assign/{inventory_code}: {e}")
+        return jsonify({'error': f"An internal server error occurred: {str(e)}"}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+        logging.info("Database connection closed after PUT /inventory/assign.")
