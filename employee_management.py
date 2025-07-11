@@ -4,6 +4,12 @@ import logging, bcrypt
 from verify_jwt import token_required
 from datetime import datetime
 import re
+import jwt
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+SECRET_KEY = os.getenv('jwt_secret_key')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -274,9 +280,26 @@ def update_employee(decoded, emp_id):
 @emp.route('/employees/remove/<int:emp_id>', methods=['PUT'])
 @token_required
 def update_permission(decoded ,emp_id):
+
+    token = request.headers.get('Authorization')
+    if not token:
+        logging.warning("Missing token in request headers")
+        return None, jsonify({'error': 'Missing token'}), 401
+
+    if token.startswith("Bearer "):
+        token = token[7:]  
+
+    decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+    user_id = decoded['user_id']
+
     logging.info(f"PUT request to update permission for emp_id: {emp_id}")
     data = request.get_json()
     permission = data.get('permission')
+
+    # Prevent self-modification
+    if user_id == emp_id:
+        logging.warning(f"User with emp_id {emp_id} attempted to modify their own permission.")
+        return jsonify({'error': 'You cannot modify your own account permissions'}), 403
 
     connection = None
     cursor = None
